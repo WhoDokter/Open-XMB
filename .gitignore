@@ -6,6 +6,7 @@
 !/LICENSE
 !/app/
 !/docs/
+!/.github/
 
 # Dumps of built Wallpaper Engine scripts (they embed whatever data the build used)
 we_script_run.mjs

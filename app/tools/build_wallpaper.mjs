@@ -228,7 +228,8 @@ const project = {
   type: 'web',
   title: EXPERIMENTAL ? 'PS3 XMB Wave (experimental)' : 'PS3 XMB Wave',
   description: 'WebGL2 reimplementation of the PS3 XMB background: wave, particles, monthly colours and HDR.',
-  preview: 'preview.png',
+  // the repository's own screenshot (docs/preview.jpg); an extracted build may use a local app/wallpaper_preview.png
+  preview: ASSETS === 'extracted' && existsSync(join(APP, 'wallpaper_preview.png')) ? 'preview.png' : 'preview.jpg',
   general: {
     properties: {
       preset: combo(0, 'Preset', 'auto', [['auto', 'Auto (follows the clock)'], ...PRESETS.map((p) => [p, p])]),
@@ -277,8 +278,8 @@ canvas { display: block; width: 100vw; height: 100vh; } #log { position: fixed; 
 <script src="wallpaper.js"></script>
 </body></html>
 `);
-const preview = join(APP, 'wallpaper_preview.png');
-if (existsSync(preview)) copyFileSync(preview, join(OUT, 'preview.png'));
+if (project.preview === 'preview.png') copyFileSync(join(APP, 'wallpaper_preview.png'), join(OUT, 'preview.png'));
+else if (existsSync(join(ROOT, 'docs', 'preview.jpg'))) copyFileSync(join(ROOT, 'docs', 'preview.jpg'), join(OUT, 'preview.jpg'));
 // Standalone page: the same runtime inlined into one HTML file that opens straight from disk (file://, no server):
 // every asset is already embedded and fetch() is served from memory. Settings panel visible ('H' hides it).
 const STANDALONE = join(ROOT, 'dist', `PS3-XMB${ASSETS === 'procedural' ? '-procedural' : ''}${EXPERIMENTAL ? '-experimental' : ''}.html`);

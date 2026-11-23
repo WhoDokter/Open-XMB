@@ -1,0 +1,67 @@
+# Builds the procedural (firmware-free) files and attaches them to a GitHub release.
+#   push a tag such as v1.0  ->  release "v1.0" with the files below
+#   run it by hand (Actions tab)  ->  the same files as a downloadable artifact, no release
+# Only --assets=procedural builds are published: builds with extracted firmware files must never be shared.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build (main and experimental)
+        run: |
+          node app/tools/build_wallpaper.mjs --assets=procedural
+          node app/tools/build_wallpaper.mjs --assets=procedural --experimental
+
+      - name: Collect the release files
+        run: |
+          mkdir release
+          cp dist/PS3-XMB-procedural.html release/PS3-XMB.html
+          cp dist/PS3-XMB-procedural-experimental.html release/PS3-XMB-experimental.html
+          (cd dist/wallpaper && zip -qr ../../release/PS3-XMB-wallpaper.zip .)
+          (cd dist/wallpaper-experimental && zip -qr ../../release/PS3-XMB-wallpaper-experimental.zip .)
+          ls -la release
+          # nothing from the firmware may be in them: a procedural build embeds no .mnu, PNG, LUT or table file
+          # (embedded files are keyed by path, e.g. "/extracted_lines/LINE1.mnu" or "/assets/png/...")
+          if grep -lE '"/(extracted_lines|assets)/' release/*.html; then echo 'firmware files embedded'; exit 1; fi
+
+      - name: Upload as an artifact (manual runs)
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: PS3-XMB
+          path: release/
+
+      - name: Publish the release (tags)
+        if: ${{ startsWith(github.ref, 'refs/tags/') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" release/* --title "$GITHUB_REF_NAME" --notes "$(cat <<'NOTES'
+          **Downloads**
+
+          - `PS3-XMB.html`: open it in a browser (double-click); everything is inside and it works offline.
+          - `PS3-XMB-wallpaper.zip`: a Wallpaper Engine web wallpaper. Unpack it and add it with *Open from file*, picking `index.html`.
+
+          **Experimental** (background image and liquid glass ribbon; see the README):
+
+          - `PS3-XMB-experimental.html`
+          - `PS3-XMB-wallpaper-experimental.zip`
+
+          The Wallpaper Engine 3D scene (also for Android) is on Steam Workshop.
+          NOTES
+          )"
