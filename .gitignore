@@ -1,0 +1,33 @@
+# Allowlist: this folder also holds firmware files, captures, builds and tool caches, none of which belong in the
+# repository. Only what is listed here is tracked.
+/*
+!/.gitignore
+!/README.md
+!/LICENSE
+!/app/
+
+# Dumps of built Wallpaper Engine scripts (they embed whatever data the build used)
+we_script_run.mjs
+
+# Shaders translated mechanically from the firmware's programs (app/tools/rsx2glsl.mjs, rpcs3dump2glsl.mjs): they
+# come from your own extracted files, see README "Exact mode"; nothing in the default (procedural) path uses them
+/app/src/shaders/back_colours0.frag.glsl
+/app/src/shaders/ffd_shader*.frag.glsl
+/app/src/shaders/particles_quads.*.glsl
+/app/src/shaders/particles_second.*.glsl
+
+# Screenshot made with the extracted assets
+/app/wallpaper_preview.png
+
+# Firmware formats, in case any end up inside app/
+*.bin
+*.prx
+*.sprx
+*.self
+*.elf
+*.qrc
+*.vpo
+*.fpo
+*.dds
+*.rdc
+*.mnu

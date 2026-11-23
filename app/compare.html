@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Asset Comparison</title>
+  <link rel="icon" href="data:,">
+  <style>
+    :root { --bg: #111317; --panel: #1a1d23; --line: #2b2f37; --text: #e6e8ec; --muted: #9aa1ad; --accent: #7fb2ff;
+      --good: #6fcf8f; --warn: #e9c46a; --bad: #ef6f6c; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, "Segoe UI", sans-serif; }
+    header { padding: 16px 20px 0; }
+    h1 { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
+    header p { margin: 0 0 12px; color: var(--muted); max-width: 900px; }
+    nav { display: flex; gap: 4px; padding: 0 20px; border-bottom: 1px solid var(--line); }
+    nav button { background: none; border: 0; border-bottom: 2px solid transparent; color: var(--muted); padding: 8px 12px;
+      font: inherit; cursor: pointer; }
+    nav button.on { color: var(--text); border-bottom-color: var(--accent); }
+    section { display: none; padding: 16px 20px 40px; }
+    section.on { display: block; }
+    .controls { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; margin-bottom: 14px; color: var(--muted); }
+    .controls label { display: flex; gap: 8px; align-items: center; }
+    .summary { margin: 0 0 12px; }
+    table { border-collapse: collapse; }
+    th { text-align: left; font-weight: 500; color: var(--muted); padding: 4px 10px 6px 0; white-space: nowrap; }
+    td { padding: 4px 10px 4px 0; vertical-align: middle; }
+    td.stat { font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--muted); }
+    canvas.tex { image-rendering: pixelated; display: block; border: 1px solid var(--line); }
+    .good { color: var(--good); } .warn { color: var(--warn); } .bad { color: var(--bad); }
+    .plot { background: var(--panel); border: 1px solid var(--line); display: block; width: 100%; max-width: 1040px; height: auto; }
+    .legend { display: flex; gap: 16px; margin: 8px 0 18px; color: var(--muted); flex-wrap: wrap; }
+    .legend span::before { content: ''; display: inline-block; width: 12px; height: 3px; margin-right: 6px; vertical-align: middle; background: var(--c); }
+    h2 { font-size: 15px; font-weight: 600; margin: 18px 0 6px; }
+    .note { color: var(--muted); max-width: 900px; }
+    .scroll { overflow-x: auto; }
+    #err { color: var(--bad); padding: 0 20px; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Original vs procedural assets</h1>
+    <p>Left: the textures and tables extracted from the PS3 firmware (read from the local <code>assets/</code> folder, never
+      bundled). Right: the procedural replacement, computed here from a few parameters. Differences are shown amplified.</p>
+  </header>
+  <nav>
+    <button data-tab="months" class="on">Month backgrounds</button>
+    <button data-tab="fres">FresLUT</button>
+    <button data-tab="spline">Spline basis</button>
+  </nav>
+  <div id="err"></div>
+
+  <section id="months" class="on">
+    <div class="controls">
+      <label>Polynomial degree <input id="deg" type="range" min="1" max="6" value="3"> <b id="degv">3</b>
+        (<span id="params"></span> numbers per texture)</label>
+      <label>Diff gain <select id="gain"><option>4</option><option selected>8</option><option>16</option><option>32</option></select></label>
+      <label>Zoom <select id="zoom"><option>2</option><option selected>3</option><option>4</option></select></label>
+    </div>
+    <p class="summary" id="msum"></p>
+    <div class="scroll"><table id="mtab"></table></div>
+    <p class="note">Each texture (64 x 32, RGB) is fitted per channel with a 2-D polynomial in (u, v) by least squares.
+      Errors are in 8-bit levels: RMS over all pixels and the worst single pixel. Under about 1 RMS / 3 max is hard to see.</p>
+  </section>
+
+  <section id="fres">
+    <p class="summary" id="fsum"></p>
+    <h2>_FresLUT.x: Fresnel falloff (original 8-bit table vs analytic fit)</h2>
+    <canvas class="plot" id="fplot1" width="1040" height="300"></canvas>
+    <div class="legend"><span style="--c:#7fb2ff">original</span><span style="--c:#ef6f6c">fit: exp(t (-3.714 - 20.347 t + 54.703 t² - 85.329 t³))</span><span style="--c:#e9c46a">difference x 10</span></div>
+    <h2>_FresLUT.y: highlight bump (original vs gamma-shaped fit)</h2>
+    <canvas class="plot" id="fplot2" width="1040" height="300"></canvas>
+    <div class="legend"><span style="--c:#7fb2ff">original</span><span style="--c:#ef6f6c" id="bumplabel">fit</span><span style="--c:#e9c46a">difference x 10</span></div>
+  </section>
+
+  <section id="spline">
+    <p class="summary" id="ssum"></p>
+    <h2>Basis weights B[k] (t = k / 127) and derivatives D[k]</h2>
+    <canvas class="plot" id="splot" width="1040" height="340"></canvas>
+    <div class="legend"><span style="--c:#7fb2ff">table (spline.elf)</span><span style="--c:#ef6f6c">uniform cubic B-spline formula (dashed)</span></div>
+    <p class="note">B = ((1-t)³, 3t³ - 6t² + 4, -3t³ + 3t² + 3t + 1, t³) / 6 and its derivative: textbook math, so this one
+      is reproduced exactly, not approximated.</p>
+  </section>
+
+<script type="module">
+const $ = (id) => document.getElementById(id);
+const pad = (i) => String(i).padStart(2, '0');
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+for (const b of document.querySelectorAll('nav button')) b.addEventListener('click', () => {
+  document.querySelectorAll('nav button, section').forEach((e) => e.classList.remove('on'));
+  b.classList.add('on'); $(b.dataset.tab).classList.add('on');
+});
+
+async function loadRGB(url) {
+  const img = new Image(); img.src = url; await img.decode();
+  const c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
+  const g = c.getContext('2d'); g.drawImage(img, 0, 0);
+  return { w: img.width, h: img.height, d: g.getImageData(0, 0, img.width, img.height).data };
+}
+const bin = async (url) => new Uint8Array(await (await fetch(url)).arrayBuffer());
+
+// ---- least squares (normal equations, Gaussian elimination)
+function solve(M, n) {
+  for (let c = 0; c < n; c++) {
+    let p = c; for (let r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[p][c])) p = r;
+    [M[c], M[p]] = [M[p], M[c]];
+    for (let r = 0; r < n; r++) if (r !== c) { const f = M[r][c] / M[c][c]; for (let k = c; k <= n; k++) M[r][k] -= f * M[c][k]; }
+  }
+  return M.map((row, i) => row[n] / row[i]);
+}
+const termsOf = (deg) => { const t = []; for (let i = 0; i <= deg; i++) for (let j = 0; j <= deg - i; j++) t.push([i, j]); return t; };
+
+// Fit one RGB texture with a polynomial of the given degree; returns the reconstructed RGB (0..255 floats)
+function fitTexture(tex, deg) {
+  const { w, h, d } = tex, T = termsOf(deg), n = T.length, rec = new Float32Array(w * h * 3);
+  const basis = new Float64Array(w * h * n);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const u = x / (w - 1) * 2 - 1, v = y / (h - 1) * 2 - 1;   // centred: better conditioned
+    T.forEach(([i, j], k) => { basis[(y * w + x) * n + k] = u ** i * v ** j; });
+  }
+  for (let c = 0; c < 3; c++) {
+    const M = Array.from({ length: n }, () => new Float64Array(n + 1));
+    for (let p = 0; p < w * h; p++) {
+      const y0 = d[p * 4 + c];
+      for (let i = 0; i < n; i++) { const bi = basis[p * n + i]; M[i][n] += bi * y0; for (let j = 0; j < n; j++) M[i][j] += bi * basis[p * n + j]; }
+    }
+    const k = solve(M, n);
+    for (let p = 0; p < w * h; p++) { let s = 0; for (let i = 0; i < n; i++) s += k[i] * basis[p * n + i]; rec[p * 3 + c] = s; }
+  }
+  return rec;
+}
+
+function drawTex(canvas, w, h, zoom, pixel) {
+  canvas.width = w; canvas.height = h; canvas.style.width = `${w * zoom}px`; canvas.style.height = `${h * zoom}px`;
+  const g = canvas.getContext('2d'), im = g.createImageData(w, h);
+  for (let p = 0; p < w * h; p++) { const [r, gg, b] = pixel(p); im.data[p * 4] = r; im.data[p * 4 + 1] = gg; im.data[p * 4 + 2] = b; im.data[p * 4 + 3] = 255; }
+  g.putImageData(im, 0, 0);
+}
+const cls = (rms, mx) => (rms < 1 && mx < 3 ? 'good' : rms < 2 && mx < 8 ? 'warn' : 'bad');
+
+// ---- months
+let textures = null;
+async function loadMonths() {
+  textures = [];
+  for (let m = 1; m <= 12; m++) textures.push({
+    day: await loadRGB(`../assets/png/month_day_${pad(m)}.png`), night: await loadRGB(`../assets/png/month_night_${pad(m)}.png`),
+  });
+}
+function renderMonths() {
+  const deg = Number($('deg').value), gain = Number($('gain').value), zoom = Number($('zoom').value);
+  $('degv').textContent = deg; $('params').textContent = termsOf(deg).length * 3;
+  const tab = $('mtab'); tab.innerHTML = '';
+  const head = tab.insertRow(); for (const t of ['', 'Day: original', 'procedural', `difference x ${gain}`, '', 'Night: original', 'procedural', `difference x ${gain}`, ''])
+    head.appendChild(Object.assign(document.createElement('th'), { textContent: t }));
+  let good = 0, all = 0;
+  textures.forEach((m, i) => {
+    const row = tab.insertRow(); row.insertCell().textContent = MONTHS[i];
+    for (const kind of ['day', 'night']) {
+      const tex = m[kind], rec = fitTexture(tex, deg), { w, h, d } = tex;
+      let se = 0, mx = 0;
+      for (let p = 0; p < w * h; p++) for (let c = 0; c < 3; c++) { const e = rec[p * 3 + c] - d[p * 4 + c]; se += e * e; mx = Math.max(mx, Math.abs(e)); }
+      const rms = Math.sqrt(se / (w * h * 3));
+      const cOrig = document.createElement('canvas'), cFit = document.createElement('canvas'), cDiff = document.createElement('canvas');
+      cOrig.className = cFit.className = cDiff.className = 'tex';
+      drawTex(cOrig, w, h, zoom, (p) => [d[p * 4], d[p * 4 + 1], d[p * 4 + 2]]);
+      drawTex(cFit, w, h, zoom, (p) => [0, 1, 2].map((c) => Math.round(Math.min(255, Math.max(0, rec[p * 3 + c])))));
+      drawTex(cDiff, w, h, zoom, (p) => [0, 1, 2].map((c) => Math.min(255, 128 + gain * (rec[p * 3 + c] - d[p * 4 + c]))));
+      for (const cv of [cOrig, cFit, cDiff]) row.insertCell().appendChild(cv);
+      const st = row.insertCell(); st.className = `stat ${cls(rms, mx)}`; st.textContent = `RMS ${rms.toFixed(2)}  max ${mx.toFixed(1)}`;
+      all++; if (cls(rms, mx) === 'good') good++;
+    }
+  });
+  $('msum').innerHTML = `<b>${good} of ${all}</b> textures look identical at degree ${deg} (RMS &lt; 1 and worst pixel &lt; 3 levels).`;
+}
+
+// ---- plots
+function plot(canvas, series, { ymin = 0, ymax = 1, xlabel = '' } = {}) {
+  const g = canvas.getContext('2d'), W = canvas.width, H = canvas.height, L = 44, R = 10, T = 10, B = 26;
+  g.clearRect(0, 0, W, H); g.font = '11px system-ui'; g.fillStyle = '#9aa1ad'; g.strokeStyle = '#2b2f37';
+  for (let i = 0; i <= 4; i++) { const y = T + (H - T - B) * i / 4; g.beginPath(); g.moveTo(L, y); g.lineTo(W - R, y); g.stroke();
+    g.fillText((ymax - (ymax - ymin) * i / 4).toFixed(2), 4, y + 4); }
+  g.fillText(xlabel, L, H - 6);
+  for (const s of series) {
+    g.strokeStyle = s.color; g.lineWidth = s.width || 1.5; g.setLineDash(s.dash || []); g.beginPath();
+    s.ys.forEach((v, i) => { const x = L + (W - L - R) * i / (s.ys.length - 1), y = T + (H - T - B) * (ymax - v) / (ymax - ymin);
+      if (i) g.lineTo(x, y); else g.moveTo(x, y); });
+    g.stroke(); g.setLineDash([]);
+  }
+}
+
+async function renderFres() {
+  const t = await bin('../assets/lines/freslut_512x1.bin');
+  const x = Array.from({ length: 512 }, (_, i) => t[i * 4] / 255), bump = Array.from({ length: 512 }, (_, i) => t[i * 4 + 3] / 255);
+  const fx = x.map((_, i) => { const u = i / 511; return Math.exp(u * (-3.71419 + u * (-20.34744 + u * (54.70314 + u * -85.32879)))); });
+  // gamma-shaped bump A (u - u0)^p exp(-(u - u0) / k), u in texels
+  const [u0, p, k, A] = [16.3545, 2.19503, 6.14477, 0.0289563];
+  const fb = bump.map((_, i) => (i <= u0 ? 0 : A * (i - u0) ** p * Math.exp(-(i - u0) / k)));
+  $('bumplabel').textContent = `fit: ${A.toFixed(4)} (u - ${u0.toFixed(2)})^${p.toFixed(2)} exp(-(u - ${u0.toFixed(2)}) / ${k.toFixed(2)})`;
+  const err = (a, b) => { let se = 0, mx = 0; a.forEach((v, i) => { const e = (b[i] - v) * 255; se += e * e; mx = Math.max(mx, Math.abs(e)); }); return [Math.sqrt(se / a.length), mx]; };
+  const [r1, m1] = err(x, fx), [r2, m2] = err(bump, fb);
+  plot($('fplot1'), [{ ys: x, color: '#7fb2ff' }, { ys: fx, color: '#ef6f6c' }, { ys: x.map((v, i) => 0.5 + 10 * (fx[i] - v)), color: '#e9c46a', width: 1 }], { xlabel: 'u = |V·N| · lod (texel / 511)' });
+  plot($('fplot2'), [{ ys: bump, color: '#7fb2ff' }, { ys: fb, color: '#ef6f6c' }, { ys: bump.map((v, i) => 0.5 + 10 * (fb[i] - v)), color: '#e9c46a', width: 1 }], { xlabel: 'u = |V·N| · lod (texel / 511)' });
+  $('fsum').innerHTML = `Fresnel curve: RMS <b class="${cls(r1, m1)}">${r1.toFixed(2)}</b>, worst ${m1.toFixed(1)} levels (the original's own 8-bit noise is part of this).
+    Highlight bump: RMS <b class="${cls(r2, m2)}">${r2.toFixed(2)}</b>, worst ${m2.toFixed(1)} levels.`;
+}
+
+async function renderSpline() {
+  const f = new Float32Array((await bin('../assets/tables/spline_tables.bin')).buffer);
+  const Bt = f.slice(0, 512), Dt = f.slice(512, 1024);
+  const bs = (t) => [(1 - t) ** 3 / 6, (3 * t ** 3 - 6 * t ** 2 + 4) / 6, (-3 * t ** 3 + 3 * t ** 2 + 3 * t + 1) / 6, t ** 3 / 6];
+  const ds = (t) => [-((1 - t) ** 2) / 2, (9 * t ** 2 - 12 * t) / 6, (-9 * t ** 2 + 6 * t + 3) / 6, t ** 2 / 2];
+  const series = []; let mx = 0;
+  for (let c = 0; c < 4; c++) {
+    const tb = [], fbv = [], td = [], fd = [];
+    for (let k = 0; k < 128; k++) { const t = k / 127, b = bs(t), dd = ds(t);
+      tb.push(Bt[k * 4 + c]); fbv.push(b[c]); td.push(Dt[k * 4 + c]); fd.push(dd[c]);
+      mx = Math.max(mx, Math.abs(Bt[k * 4 + c] - b[c]), Math.abs(Dt[k * 4 + c] - dd[c])); }
+    series.push({ ys: tb, color: '#7fb2ff', width: 3 }, { ys: fbv, color: '#ef6f6c', dash: [5, 4] }, { ys: td, color: '#7fb2ff', width: 3 }, { ys: fd, color: '#ef6f6c', dash: [5, 4] });
+  }
+  plot($('splot'), series, { ymin: -0.8, ymax: 0.8, xlabel: 't = k / 127 (the four weights and their derivatives)' });
+  $('ssum').innerHTML = `Largest difference between the table and the formula: <b class="good">${mx.toExponential(1)}</b> (float rounding): exact.`;
+}
+
+try {
+  await loadMonths(); renderMonths();
+  for (const id of ['deg', 'gain', 'zoom']) $(id).addEventListener('input', renderMonths);
+  await renderFres(); await renderSpline();
+} catch (e) {
+  $('err').textContent = `The originals are not here (${e.message}): this page compares the procedural assets with your own extracted files (README, "Exact mode"). Serve the repository root (node app/tools/serve.mjs) with them in place and open /app/compare.html.`;
+}
+</script>
+</body>
+</html>

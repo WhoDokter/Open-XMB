@@ -1,0 +1,120 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Particle program check</title>
+<style>body { font: 14px monospace; background: #111; color: #ddd; } canvas { border: 1px solid #444; margin: 4px; }</style>
+</head>
+<body>
+<!-- Checks the hand-written particle programs (src/shaders/sparks.*, glare.*) against the mechanical translations
+     of the firmware's programs (particles_quads / particles_second; needs your extracted files): the same random
+     particles drawn with both into float targets, compared pixel by pixel. Serve the repository root
+     (node app/tools/serve.mjs) and open /app/tools/check_particles.html. -->
+<pre id="out">running...</pre>
+<div id="views"></div>
+<script type="module">
+import { compileProgram, dataTexture, uniformVec4Array, perspective, mul } from '../src/gl_utils.js';
+import { readParams, namedConstants, shaderUniforms, withParticlesLib, LAYOUT, fillTable } from '../src/particles_core.js';
+import { createAssetSource } from '../src/asset_source.js';
+
+const W = 640, H = 360, out = document.getElementById('out');
+const log = (s) => { out.textContent += '\n' + s; };
+out.textContent = '';
+const canvas = document.createElement('canvas'); canvas.width = W; canvas.height = H;
+const gl = canvas.getContext('webgl2', { antialias: false });
+if (!gl.getExtension('EXT_color_buffer_float')) throw new Error('no float targets');
+const text = (n) => fetch('../src/shaders/' + n).then((r) => r.text());
+const source = await createAssetSource('extracted', '../../');
+const iri = await source.iridescent();
+const tex = dataTexture(gl, iri.width, iri.height, iri.data);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+
+const rsxSrc = await Promise.all(['particles_quads.vert', 'particles_quads.frag', 'particles_second.vert', 'particles_second.frag'].map((n) => text(n + '.glsl')));
+const lib = await text('particles_lib.glsl');
+const ourSrc = (await Promise.all(['sparks.vert', 'sparks.frag', 'glare.vert', 'glare.frag'].map((n) => text(n + '.glsl')))).map((s) => withParticlesLib(s, lib));
+const rsx = [compileProgram(gl, rsxSrc[0], rsxSrc[1], 'quads', ['aPos', 'aTc0', 'aTc3']), compileProgram(gl, rsxSrc[2], rsxSrc[3], 'second', ['aPos', 'aTc0', 'aTc3'])];
+const ours = [compileProgram(gl, ourSrc[0], ourSrc[1], 'sparks'), compileProgram(gl, ourSrc[2], ourSrc[3], 'glare')];
+
+// quad corners (attribute 1) + per-particle pos / quat (attributes 0, 2), as particles_pass.js
+const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 0, 1, 1, 1, 0, 1]), gl.STATIC_DRAW);
+gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 0, 0);
+const inst = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, inst);
+gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 32, 0); gl.vertexAttribDivisor(0, 1);
+gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 4, gl.FLOAT, false, 32, 16); gl.vertexAttribDivisor(2, 1);
+
+const target = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, target);
+gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, W, H, 0, gl.RGBA, gl.FLOAT, null);
+const fb = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, target, 0);
+
+function setUniforms(prog, values) {
+  for (const [name, v] of Object.entries(values)) {
+    const loc = prog.u[name]; if (loc === undefined) continue;
+    if (typeof v === 'number') gl.uniform1f(loc, v); else [, gl.uniform1fv, gl.uniform2fv, gl.uniform3fv, gl.uniform4fv][v.length].call(gl, loc, v);
+  }
+}
+// pass: 0 sparks, 1 glare; which: 'rsx' | 'ours' -> RGBA float pixels
+function draw(pass, which, P, camera, n) {
+  gl.viewport(0, 0, W, H); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.bindVertexArray(vao);
+  if (which === 'rsx') {
+    const p = rsx[pass], named = namedConstants(P, camera);
+    gl.useProgram(p.program); gl.uniform1i(p.u.sTex0, 0);
+    const [vl, fl, vn] = pass ? [LAYOUT.secondVC, LAYOUT.secondFC, 25] : [LAYOUT.quadsVC, LAYOUT.quadsFC, 24];
+    uniformVec4Array(gl, p, 'vc', fillTable(vl, named, new Float32Array(vn * 4)));
+    uniformVec4Array(gl, p, 'fc', fillTable(fl, named, new Float32Array(36 * 4)));
+  } else {
+    const p = ours[pass];
+    gl.useProgram(p.program); gl.uniform1i(p.u.uTint, 0); setUniforms(p, shaderUniforms(P, camera));
+  }
+  gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, n);
+  const px = new Float32Array(W * H * 4); gl.readPixels(0, 0, W, H, gl.RGBA, gl.FLOAT, px);
+  return px;
+}
+
+let seed = 7;
+const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+const fovy = 0.925025, view = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, -2, 1]);
+const camera = { eye: [0, 0, 2], view, fovy, aspect: W / H, viewProj: mul(perspective(fovy, W / H, 0.1, 1000), view) };
+let worstAll = 0;
+for (const preset of ['night', 'day', 'yoake', 'higure']) {
+  for (const variant of ['preset', 'iridescent exp 1.7']) {
+    const mnu = { ...(await source.preset(preset)).PARTICLES };
+    if (variant !== 'preset') mnu['iridescent exp'] = 1.7;
+    const P = readParams(mnu);
+    // particles across the whole life box and depth range, random spin, weights 0..1
+    const n = 400, data = new Float32Array(n * 8);
+    for (let i = 0; i < n; i++) {
+      const z = -11 + rnd() * 12.5;
+      data.set([(rnd() * 2 - 1) * 6, (rnd() * 2 - 1) * 3.5, z, rnd(), rnd() * 2 - 1, rnd() * 2 - 1, rnd() * 2 - 1, rnd() * 2 - 1], i * 8);
+    }
+    gl.bindBuffer(gl.ARRAY_BUFFER, inst); gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+    for (const pass of [0, 1]) {
+      const a = draw(pass, 'rsx', P, camera, n), b = draw(pass, 'ours', P, camera, n);
+      let worst = 0, sumA = 0, sumB = 0, lit = 0, peak = 0;
+      for (let i = 0; i < a.length; i++) {
+        if ((i & 3) === 3) continue;
+        const d = Math.abs(a[i] - b[i]); if (d > worst) worst = d;
+        sumA += a[i]; sumB += b[i]; peak = Math.max(peak, a[i]); if (a[i] > 1 / 255) lit++;
+      }
+      if (variant === 'preset') worstAll = Math.max(worstAll, worst);
+      log(`${preset.padEnd(7)} ${variant.padEnd(20)} ${pass ? 'glare ' : 'sparks'}: max |diff| ${worst.toExponential(2)} (peak ${peak.toFixed(3)}), sum ${sumA.toFixed(2)} vs ${sumB.toFixed(2)}, lit channels ${lit}`);
+      if (preset === 'night' && variant === 'preset') {
+        const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d'), im = g.createImageData(W, H);
+        for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) for (let k = 0; k < 3; k++) {
+          const s = ((H - 1 - y) * W + x) * 4 + k; im.data[(y * W + x) * 4 + k] = Math.min(255, Math.abs(a[s] - b[s]) * 255 * 100); im.data[(y * W + x) * 4 + 3] = 255;
+        }
+        g.putImageData(im, 0, 0); document.getElementById('views').append(c);
+      }
+    }
+  }
+}
+log(`\nlargest difference at the preset values: ${worstAll.toExponential(2)}`);
+window.checkDone = worstAll;
+</script>
+</body>
+</html>
