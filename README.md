@@ -92,7 +92,8 @@ Two more additions are kept out of the main builds and are only in experimental 
   12 settings.
 
 They are kept as experimental as I was unable to port them properly to the 3D scene version, and they are mostly
-gimmicks.
+gimmicks. Try them online in the [experimental demo](https://whodokter.github.io/Open-XMB/experimental.html), or
+download the `-experimental` files from [Releases](../../releases).
 
 ```bash
 node app/tools/build_wallpaper.mjs --experimental
