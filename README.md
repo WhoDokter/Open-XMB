@@ -1,5 +1,9 @@
 # PS3 XMB background
 
+[![Open XMB: the PS3 XMB background running in a browser. Click for the live demo.](docs/preview.jpg)](https://whodokter.github.io/Open-XMB/)
+
+*Click the picture for the live demo in your browser.*
+
 A complete reimplementation of the PlayStation 3 XMB background with some additional features. It runs in a browser
 (WebGL 2) and as a Wallpaper Engine web wallpaper, and has a Wallpaper Engine 3D scene version (which also works in
 Wallpaper Engine for Android) available on Steam Workshop.
@@ -12,8 +16,6 @@ copy of the build (see [Exact mode](#exact-mode)).
 
 Not affiliated with or endorsed by Sony Interactive Entertainment. "PlayStation" and "XMB" are trademarks of their
 owners.
-
-<!-- Live demo: add the GitHub Pages link here once the repository is public -->
 
 ## Run it
 
