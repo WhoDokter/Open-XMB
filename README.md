@@ -6,7 +6,7 @@
 
 A complete reimplementation of the PlayStation 3 XMB background with some additional features. It runs in a browser
 (WebGL 2) and as a Wallpaper Engine web wallpaper, and has a Wallpaper Engine 3D scene version (which also works in
-Wallpaper Engine for Android) available on Steam Workshop.
+Wallpaper Engine for Android) available on [Steam Workshop](https://steamcommunity.com/sharedfiles/filedetails/?id=3844997696).
 
 It was rebuilt by studying how the console draws its background: most of its aspects follow the firmware's behaviour
 extremely closely and were checked against RPCS3 captures. No firmware files are included and none are needed for an
@@ -24,7 +24,8 @@ No installation needed. From [Releases](../../releases), download:
 - **`PS3-XMB.html`**: one file, everything inside. Open it in a browser (double-click); it works offline.
 - **the web wallpaper** (zip): unpack it and add it in Wallpaper Engine with *Open from file*, picking `index.html`.
 
-The 3D scene (also for Wallpaper Engine on Android) is on Steam Workshop.
+The 3D scene (also for Wallpaper Engine on Android) is on [Steam Workshop](https://steamcommunity.com/sharedfiles/filedetails/?id=3844997696): subscribe there and it's added to
+Wallpaper Engine.
 
 `H` shows or hides the settings: preset, month and day, time of day (or a time-lapse of a whole day), ribbon speed,
 how the sparks react to the pointer, particle amount, brightness curve, the ribbon start (*fixed* opens the same way
@@ -71,6 +72,9 @@ Only builds with `--assets=procedural` may be shared. Builds with your own firmw
 default once [Exact mode](#exact-mode) is set up) contain Sony's data and are for your own use only.
 
 ### Wallpaper Engine 3D scene
+
+The published version is on [Steam Workshop](https://steamcommunity.com/sharedfiles/filedetails/?id=3844997696). To build it yourself:
+
 
 Make an empty 3D scene project in the Wallpaper Engine editor and save it, then:
 
